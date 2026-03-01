@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { redis } from "./db/redis";
 import { logger } from "./logger";
+import { createChatsRouter } from "./chats/routes";
 
 const db = drizzle(process.env.DATABASE_URL!);
 const app = express();
@@ -14,6 +15,8 @@ redis.on("error", (err) => {
 });
 
 app.use(express.json());
+
+app.use("/chats", createChatsRouter(db));
 
 app.get("/health", async (_req, res) => {
     const status: { postgres?: string; redis?: string } = {};
@@ -34,7 +37,7 @@ app.get("/health", async (_req, res) => {
 });
 
 const server = app.listen(PORT, () => {
-    logger.info({ port: PORT }, "Server listening");
+    logger.info(`Server listening on port ${PORT}`);
 });
 
 const shutdown = () => {

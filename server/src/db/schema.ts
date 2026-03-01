@@ -1,7 +1,7 @@
 import {
     pgTable,
     serial,
-    integer,
+    uuid,
     text,
     timestamp,
     pgEnum,
@@ -14,7 +14,7 @@ export const messageRoleEnum = pgEnum("message_role", [
 ]);
 
 export const chats = pgTable("chats", {
-    id: serial("id").primaryKey(),
+    id: uuid("id").primaryKey().defaultRandom(),
     createdAt: timestamp("created_at", { withTimezone: true })
         .notNull()
         .defaultNow(),
@@ -22,7 +22,7 @@ export const chats = pgTable("chats", {
 
 export const messages = pgTable("messages", {
     id: serial("id").primaryKey(),
-    chatId: integer("chat_id")
+    chatId: uuid("chat_id")
         .notNull()
         .references(() => chats.id, { onDelete: "cascade" }),
     role: messageRoleEnum("role").notNull(),
