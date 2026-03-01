@@ -1,4 +1,5 @@
 import "./env";
+import cors from "cors";
 import express from "express";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -14,6 +15,7 @@ redis.on("error", (err) => {
     logger.error({ err }, "Redis error");
 });
 
+app.use(cors());
 app.use(express.json());
 
 app.use("/chats", createChatsRouter(db));

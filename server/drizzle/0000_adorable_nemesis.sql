@@ -1,12 +1,13 @@
 CREATE TYPE "public"."message_role" AS ENUM('user', 'assistant', 'system');--> statement-breakpoint
 CREATE TABLE "chats" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"summary" text
 );
 --> statement-breakpoint
 CREATE TABLE "messages" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"chat_id" integer NOT NULL,
+	"chat_id" uuid NOT NULL,
 	"role" "message_role" NOT NULL,
 	"content" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL

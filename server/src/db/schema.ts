@@ -18,6 +18,7 @@ export const chats = pgTable("chats", {
     createdAt: timestamp("created_at", { withTimezone: true })
         .notNull()
         .defaultNow(),
+    summary: text("summary"),
 });
 
 export const messages = pgTable("messages", {
