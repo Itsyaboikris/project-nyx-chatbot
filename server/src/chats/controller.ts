@@ -4,7 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { chats, messages } from "../db/schema";
 import type { CachedTurn } from "../db/chat-cache";
 import { getLastNTurns, setLastNTurns, invalidateChatCache } from "../db/chat-cache";
-import { generate } from "../lib/ollama";
+import { generate, generateStream } from "../lib/ollama";
 import { estimateTokens, getMaxInputTokens } from "../lib/tokens";
 import { NYX_SYSTEM_PROMPT, buildSummaryUpdatePrompt } from "../prompts/nyx";
 import { logger } from "../logger";
@@ -160,6 +160,65 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
             usedTokens += lineTokens;
         }
         const prompt = header + messagesPart + suffix;
+
+        const wantsStream = req.get("Accept")?.includes("text/event-stream") || req.query.stream === "1" || req.query.stream === "true";
+
+        if (wantsStream) {
+            res.setHeader("Content-Type", "text/event-stream");
+            res.setHeader("Cache-Control", "no-cache");
+            res.setHeader("Connection", "keep-alive");
+            res.setHeader("X-Accel-Buffering", "no");
+            res.flushHeaders?.();
+
+            const sendEvent = (data: object) => {
+                res.write(`data: ${JSON.stringify(data)}\n\n`);
+            };
+
+            let assistantContent = "";
+            try {
+                for await (const token of generateStream({ prompt })) {
+                    assistantContent += token;
+                    sendEvent({ token });
+                }
+            } catch (err) {
+                logger.error({ err, chatId }, "Ollama stream failed");
+                sendEvent({ error: "LLM unavailable" });
+                res.end();
+                return;
+            }
+
+            const trimmed = assistantContent.trim() || "(No response)";
+            const [assistantMessage] = await db
+                .insert(messages)
+                .values({ chatId, role: "assistant", content: trimmed })
+                .returning();
+            if (!assistantMessage) {
+                sendEvent({ error: "Failed to save assistant reply" });
+                res.end();
+                return;
+            }
+
+            const listWithAssistant = [...chronological, assistantMessage].slice(-lastN);
+            await setLastNTurns(chatId, listWithAssistant, ttlSeconds);
+
+            setImmediate(() => {
+                generate({ prompt: buildSummaryUpdatePrompt({
+                    previousSummary: chat.summary ?? null,
+                    userContent: userMessage.content,
+                    assistantContent: trimmed,
+                }), stream: false })
+                    .then((newSummary) => {
+                        if (newSummary?.trim()) {
+                            return db.update(chats).set({ summary: newSummary.trim() }).where(eq(chats.id, chatId));
+                        }
+                    })
+                    .catch((err) => logger.warn({ err, chatId }, "Chat summary update failed"));
+            });
+
+            sendEvent({ done: true, userMessage, assistantMessage });
+            res.end();
+            return;
+        }
 
         let assistantContent: string;
         try {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createChat, getChats, getMessages, sendMessage, deleteChat, renameChat, type Message, type Chat } from "./api";
+import { createChat, getChats, getMessages, sendMessageStream, deleteChat, renameChat, type Message, type Chat } from "./api";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -42,49 +42,6 @@ function SidebarTriggerChevron() {
     );
 }
 
-const TYPING_SPEED_MS = 20;
-
-function Typewriter({
-    text,
-    scrollContainerRef,
-    onDone,
-}: {
-    text: string;
-    scrollContainerRef: React.RefObject<HTMLDivElement | null>;
-    onDone?: () => void;
-}) {
-    const [length, setLength] = useState(0);
-    const done = length >= text.length;
-    const onDoneCalled = useRef(false);
-
-    useEffect(() => {
-        if (done) return;
-        const t = setTimeout(() => setLength((n) => Math.min(n + 1, text.length)), TYPING_SPEED_MS);
-        return () => clearTimeout(t);
-    }, [length, text.length, done]);
-
-    useEffect(() => {
-        if (done && !onDoneCalled.current) {
-            onDoneCalled.current = true;
-            onDone?.();
-        }
-    }, [done, onDone]);
-
-    useEffect(() => {
-        scrollContainerRef.current?.scrollTo({
-            top: scrollContainerRef.current.scrollHeight,
-            behavior: "auto",
-        });
-    }, [length, scrollContainerRef]);
-
-    return (
-        <span className="message-content">
-            {text.slice(0, length)}
-            {!done && <span className="typewriter-cursor" />}
-        </span>
-    );
-}
-
 const CHAT_LABEL_MAX = 40;
 
 function formatChatLabel(chat: Chat): string {
@@ -103,7 +60,6 @@ function App() {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [typingMessageId, setTypingMessageId] = useState<number | null>(null);
     const [renameModalChatId, setRenameModalChatId] = useState<string | null>(null);
     const [renameModalName, setRenameModalName] = useState("");
     const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -129,7 +85,6 @@ function App() {
     }, []);
 
     const selectChat = useCallback((id: string) => {
-        setTypingMessageId(null);
         setChatId(id);
         setError(null);
     }, []);
@@ -182,7 +137,6 @@ function App() {
 
     useEffect(() => {
         if (!chatId) return;
-        setTypingMessageId(null);
         setLoading(true);
         getMessages(chatId)
             .then(setMessages)
@@ -217,18 +171,40 @@ function App() {
             content: text,
             createdAt: new Date().toISOString(),
         };
-        setMessages((prev) => [...prev, optimisticUserMessage]);
-        try {
-            const { assistantMessage } = await sendMessage(currentChatId, text);
-            setMessages((prev) => [...prev, assistantMessage]);
-            setTypingMessageId(assistantMessage.id);
-            setChatId(currentChatId);
-            getChats().then(setChats).catch(() => {});
-        } catch (e) {
-            setError(e instanceof Error ? e.message : "Failed to send message");
-        } finally {
-            setLoading(false);
-        }
+        const placeholderAssistant: Message = {
+            id: 0,
+            chatId: currentChatId,
+            role: "assistant",
+            content: "",
+            createdAt: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, optimisticUserMessage, placeholderAssistant]);
+
+        sendMessageStream(currentChatId, text, {
+            onToken: (token) => {
+                setMessages((prev) => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last?.role === "assistant") next[next.length - 1] = { ...last, content: last.content + token };
+                    return next;
+                });
+            },
+            onDone: (data) => {
+                setMessages((prev) => {
+                    const next = prev.slice(0, -1);
+                    next.push(data.assistantMessage);
+                    return next;
+                });
+                setChatId(currentChatId);
+                setLoading(false);
+                getChats().then(setChats).catch(() => {});
+            },
+            onError: (message) => {
+                setError(message);
+                setMessages((prev) => prev.slice(0, -1));
+                setLoading(false);
+            },
+        });
     };
 
     return (
@@ -334,26 +310,14 @@ function App() {
                             <p className="empty-state">Send a message to start.</p>
                         ) : (
                             <ul className="message-list">
-                                {messages.map((m, i) => {
-                                    const isLastAssistant =
-                                        m.role === "assistant" && i === messages.length - 1;
-                                    return (
-                                        <li key={m.id === 0 ? `opt-${m.createdAt}` : m.id} className={`message message--${m.role}`}>
-                                            <span className="message-role">
-                                                {m.role === "assistant" ? "Nyx" : "You"}
-                                            </span>
-                                    {m.role === "assistant" && isLastAssistant && m.id === typingMessageId ? (
-                                        <Typewriter
-                                            text={m.content}
-                                            scrollContainerRef={chatContainerRef}
-                                            onDone={() => setTypingMessageId(null)}
-                                        />
-                                    ) : (
-                                                <span className="message-content">{m.content}</span>
-                                            )}
-                                        </li>
-                                    );
-                                })}
+                                {messages.map((m, i) => (
+                                    <li key={m.id === 0 ? `stream-${i}-${m.createdAt}` : m.id} className={`message message--${m.role}`}>
+                                        <span className="message-role">
+                                            {m.role === "assistant" ? "Nyx" : "You"}
+                                        </span>
+                                        <span className="message-content">{m.content}</span>
+                                    </li>
+                                ))}
                             </ul>
                         )}
                     </ScrollArea>
