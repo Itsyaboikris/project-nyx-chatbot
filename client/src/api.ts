@@ -8,6 +8,34 @@ export type Message = {
     createdAt: string;
 };
 
+export type Chat = {
+    id: string;
+    createdAt: string;
+    name?: string | null;
+    summary?: string | null;
+};
+
+export const renameChat = async (chatId: string, name: string): Promise<Chat> => {
+    const res = await fetch(`${baseUrl}/chats/${chatId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim() }),
+    });
+    if (!res.ok) throw new Error("Failed to rename chat");
+    return res.json();
+};
+
+export const getChats = async (): Promise<Chat[]> => {
+    const res = await fetch(`${baseUrl}/chats`);
+    if (!res.ok) throw new Error("Failed to load chats");
+    return res.json();
+};
+
+export const deleteChat = async (chatId: string): Promise<void> => {
+    const res = await fetch(`${baseUrl}/chats/${chatId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete chat");
+};
+
 export const createChat = async (): Promise<{ chatId: string }> => {
     const res = await fetch(`${baseUrl}/chats`, { method: "POST" });
     if (!res.ok) {
