@@ -5,6 +5,7 @@ import { chats, messages } from "../db/schema";
 import type { CachedTurn } from "../db/chat-cache";
 import { getLastNTurns, setLastNTurns, invalidateChatCache } from "../db/chat-cache";
 import { generate } from "../lib/ollama";
+import { estimateTokens, getMaxInputTokens } from "../lib/tokens";
 import { NYX_SYSTEM_PROMPT, buildSummaryUpdatePrompt } from "../prompts/nyx";
 import { logger } from "../logger";
 
@@ -136,17 +137,29 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
             chronological = recent.reverse();
             await setLastNTurns(chatId, chronological, ttlSeconds);
         }
-        let prompt = `${NYX_SYSTEM_PROMPT}\n\n`;
-        if (chat.summary?.trim()) {
-            prompt += `Conversation summary so far:\n${chat.summary.trim()}\n\n`;
+        const maxInputTokens = getMaxInputTokens();
+        const suffix = "Nyx: ";
+        const suffixTokens = estimateTokens(suffix);
+        let header = `${NYX_SYSTEM_PROMPT}\n\n`;
+        const rawSummary = chat.summary?.trim();
+        if (rawSummary) {
+            const maxSummaryChars = 2000;
+            header += `Conversation summary so far:\n${rawSummary.length > maxSummaryChars ? rawSummary.slice(0, maxSummaryChars) + "…" : rawSummary}\n\n`;
         }
-        prompt += "Recent messages:\n";
+        header += "Recent messages:\n";
+        const headerTokens = estimateTokens(header);
+        const budgetForMessages = Math.max(0, maxInputTokens - headerTokens - suffixTokens);
+
+        let messagesPart = "";
+        let usedTokens = 0;
         for (const m of chronological) {
-            if (m.role === "user") prompt += `User: ${m.content}\n`;
-            else if (m.role === "assistant") prompt += `Nyx: ${m.content}\n`;
-            else prompt += `System: ${m.content}\n`;
+            const line = m.role === "user" ? `User: ${m.content}\n` : m.role === "assistant" ? `Nyx: ${m.content}\n` : `System: ${m.content}\n`;
+            const lineTokens = estimateTokens(line);
+            if (usedTokens + lineTokens > budgetForMessages) break;
+            messagesPart += line;
+            usedTokens += lineTokens;
         }
-        prompt += "Nyx: ";
+        const prompt = header + messagesPart + suffix;
 
         let assistantContent: string;
         try {
