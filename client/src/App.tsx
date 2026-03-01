@@ -1,6 +1,46 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createChat, getChats, getMessages, sendMessage, deleteChat, renameChat, type Message, type Chat } from "./api";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+    SidebarProvider,
+    Sidebar,
+    SidebarHeader,
+    SidebarContent,
+    SidebarGroup,
+    SidebarGroupLabel,
+    SidebarMenu,
+    SidebarMenuItem,
+    SidebarMenuButton,
+    SidebarMenuAction,
+    SidebarInset,
+    useSidebar,
+} from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronLeft, ChevronRight, MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import "./App.css";
+
+function SidebarTriggerChevron() {
+    const { state, toggleSidebar } = useSidebar();
+    return (
+        <Button
+            variant="ghost"
+            size="icon"
+            className="size-8 shrink-0"
+            onClick={toggleSidebar}
+            title={state === "collapsed" ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={state === "collapsed" ? "Expand sidebar" : "Collapse sidebar"}
+        >
+            {state === "collapsed" ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+        </Button>
+    );
+}
 
 const TYPING_SPEED_MS = 20;
 
@@ -82,10 +122,6 @@ function App() {
         loadChats();
     }, [loadChats]);
 
-    useEffect(() => {
-        if (chats.length > 0 && !chatId) setChatId(chats[0].id);
-    }, [chats.length, chatId]);
-
     const startNewChat = useCallback(() => {
         setChatId(null);
         setMessages([]);
@@ -166,7 +202,6 @@ function App() {
             try {
                 const { chatId: id } = await createChat();
                 currentChatId = id;
-                setChatId(id);
                 const list = await getChats();
                 setChats(list);
             } catch (e) {
@@ -187,6 +222,7 @@ function App() {
             const { assistantMessage } = await sendMessage(currentChatId, text);
             setMessages((prev) => [...prev, assistantMessage]);
             setTypingMessageId(assistantMessage.id);
+            setChatId(currentChatId);
             getChats().then(setChats).catch(() => {});
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to send message");
@@ -196,43 +232,73 @@ function App() {
     };
 
     return (
-        <div className="app">
-            <aside className="sidebar">
-                <button type="button" className="sidebar-new" onClick={startNewChat} disabled={loading}>
-                    New chat
-                </button>
-                <ul className="chat-list">
-                    {chats.map((c) => (
-                        <li key={c.id}>
-                            <button
-                                type="button"
-                                className={`chat-list-item ${c.id === chatId ? "chat-list-item--active" : ""}`}
-                                onClick={() => selectChat(c.id)}
-                            >
-                                <span className="chat-list-label">{formatChatLabel(c)}</span>
-                                <button
-                                    type="button"
-                                    className="chat-list-edit"
-                                    onClick={(e) => { e.stopPropagation(); openRenameModal(c); }}
-                                    title="Rename chat"
-                                    aria-label="Rename chat"
-                                >
-                                    ✎
-                                </button>
-                                <button
-                                    type="button"
-                                    className="chat-list-delete"
-                                    onClick={(e) => handleDeleteChat(e, c.id)}
-                                    title="Delete chat"
-                                    aria-label="Delete chat"
-                                >
-                                    ×
-                                </button>
-                            </button>
-                        </li>
-                    ))}
-                </ul>
-            </aside>
+        <SidebarProvider className="app">
+            <Sidebar collapsible="icon" className="border-sidebar-border border-r">
+                <SidebarHeader className="flex flex-row items-center justify-between gap-2 p-2 group-data-[collapsible=icon]:justify-center">
+                    <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        className="flex-1 gap-2 min-w-0 bg-blue-600 text-white hover:bg-blue-500 border-0 shadow-md font-medium group-data-[collapsible=icon]:hidden"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            startNewChat();
+                        }}
+                        disabled={loading}
+                    >
+                        <MessageSquare className="size-4 shrink-0" />
+                        <span className="truncate">New chat</span>
+                    </Button>
+                    <SidebarTriggerChevron />
+                </SidebarHeader>
+                <SidebarContent>
+                    <SidebarGroup>
+                        <SidebarGroupLabel>Previous chats</SidebarGroupLabel>
+                        <SidebarMenu>
+                            {chats.map((c) => (
+                                <SidebarMenuItem key={c.id}>
+                                    <SidebarMenuButton
+                                        tooltip={formatChatLabel(c)}
+                                        isActive={c.id === chatId}
+                                        onClick={() => selectChat(c.id)}
+                                        className="pr-9"
+                                    >
+                                        <MessageSquare className="size-4 shrink-0" />
+                                        <span className="truncate">{formatChatLabel(c)}</span>
+                                    </SidebarMenuButton>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <SidebarMenuAction
+                                                className="!size-6 !top-1 !right-1 [&>svg]:!size-4"
+                                                onClick={(e) => e.stopPropagation()}
+                                                aria-label="Chat options"
+                                            >
+                                                <MoreVertical className="size-4" />
+                                            </SidebarMenuAction>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                                            <DropdownMenuItem
+                                                onClick={(e) => { e.stopPropagation(); openRenameModal(c); }}
+                                            >
+                                                <Pencil className="size-4" />
+                                                Rename
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                variant="destructive"
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteChat(e as unknown as React.MouseEvent, c.id); }}
+                                            >
+                                                <Trash2 className="size-4" />
+                                                Delete
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </SidebarMenuItem>
+                            ))}
+                        </SidebarMenu>
+                    </SidebarGroup>
+                </SidebarContent>
+            </Sidebar>
             {renameModalChatId && (
                 <div className="modal-backdrop" onClick={closeRenameModal} role="presentation">
                     <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="rename-modal-title">
@@ -256,44 +322,55 @@ function App() {
                     </div>
                 </div>
             )}
-            <div className="main">
-                <header className="app-header">
-                    <h1>Nyx</h1>
-                </header>
+            <SidebarInset>
+                <div className="main">
+                    <header className="app-header">
+                        <h1>Nyx</h1>
+                    </header>
                 {error && <div className="error">{error}</div>}
-                <div className="chat-container" ref={chatContainerRef}>
-                    {messages.length === 0 ? (
-                        <p className="empty-state">Send a message to start.</p>
-                    ) : (
-                        <ul className="message-list">
-                            {messages.map((m, i) => {
-                                const isLastAssistant =
-                                    m.role === "assistant" && i === messages.length - 1;
-                                return (
-                                    <li key={m.id === 0 ? `opt-${m.createdAt}` : m.id} className={`message message--${m.role}`}>
-                                        <span className="message-role">
-                                            {m.role === "assistant" ? "Nyx" : "You"}
-                                        </span>
-                                {m.role === "assistant" && isLastAssistant && m.id === typingMessageId ? (
-                                    <Typewriter
-                                        text={m.content}
-                                        scrollContainerRef={chatContainerRef}
-                                        onDone={() => setTypingMessageId(null)}
-                                    />
-                                ) : (
-                                            <span className="message-content">{m.content}</span>
-                                        )}
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    )}
+                <div className="chat-container">
+                    <ScrollArea viewportRef={chatContainerRef} className="h-full">
+                        {messages.length === 0 ? (
+                            <p className="empty-state">Send a message to start.</p>
+                        ) : (
+                            <ul className="message-list">
+                                {messages.map((m, i) => {
+                                    const isLastAssistant =
+                                        m.role === "assistant" && i === messages.length - 1;
+                                    return (
+                                        <li key={m.id === 0 ? `opt-${m.createdAt}` : m.id} className={`message message--${m.role}`}>
+                                            <span className="message-role">
+                                                {m.role === "assistant" ? "Nyx" : "You"}
+                                            </span>
+                                    {m.role === "assistant" && isLastAssistant && m.id === typingMessageId ? (
+                                        <Typewriter
+                                            text={m.content}
+                                            scrollContainerRef={chatContainerRef}
+                                            onDone={() => setTypingMessageId(null)}
+                                        />
+                                    ) : (
+                                                <span className="message-content">{m.content}</span>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </ScrollArea>
                 </div>
                 <form className="input-form" onSubmit={handleSubmit}>
-                    <input
-                        type="text"
+                    <Textarea
+                        rows={3}
+                        className="resize-none"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                const form = (e.target as HTMLTextAreaElement).form;
+                                if (form && input.trim()) form.requestSubmit();
+                            }
+                        }}
                         placeholder="Message Nyx..."
                         disabled={loading}
                     />
@@ -301,8 +378,9 @@ function App() {
                         Send
                     </button>
                 </form>
-            </div>
-        </div>
+                </div>
+            </SidebarInset>
+        </SidebarProvider>
     );
 }
 
