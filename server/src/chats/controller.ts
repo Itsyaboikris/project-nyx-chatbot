@@ -52,6 +52,26 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
         res.status(204).send();
     };
 
+    const update = async (req: Request, res: Response) => {
+        const id = req.params.id as string;
+        const { name } = req.body as { name?: unknown };
+        if (typeof name !== "string") {
+            res.status(400).json({ error: "name must be a string" });
+            return;
+        }
+        const trimmed = name.trim().slice(0, 80) || null;
+        const [updated] = await db
+            .update(chats)
+            .set({ name: trimmed })
+            .where(eq(chats.id, id))
+            .returning();
+        if (!updated) {
+            res.status(404).json({ error: "Chat not found" });
+            return;
+        }
+        res.json(updated);
+    };
+
     const getMessages = async (req: Request, res: Response) => {
         const chatId = req.params.id as string;
         const [chat] = await db.select().from(chats).where(eq(chats.id, chatId)).limit(1);
@@ -93,6 +113,11 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
         if (messageRole !== "user") {
             res.status(201).json(userMessage);
             return;
+        }
+
+        if (!chat.name?.trim()) {
+            const name = (userMessage.content.trim().slice(0, 80) || "New chat");
+            await db.update(chats).set({ name }).where(eq(chats.id, chatId));
         }
 
         const lastN = Math.max(1, Number(process.env.LAST_N_MESSAGES) || 20);
@@ -164,5 +189,5 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
         res.status(201).json({ userMessage, assistantMessage });
     };
 
-    return { create, getOne, getAll, remove, getMessages, addMessage };
+    return { create, getOne, getAll, remove, update, getMessages, addMessage };
 };

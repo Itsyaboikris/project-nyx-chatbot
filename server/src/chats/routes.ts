@@ -11,6 +11,7 @@ export const createChatsRouter = (db: ReturnType<typeof drizzle>) => {
     router.get("/:id/messages", controller.getMessages);
     router.post("/:id/messages", controller.addMessage);
     router.get("/:id", controller.getOne);
+    router.patch("/:id", controller.update);
     router.delete("/:id", controller.remove);
 
     return router;
