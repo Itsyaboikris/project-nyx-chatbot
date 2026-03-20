@@ -8,6 +8,37 @@ import { generate, generateStream } from "../lib/ollama";
 import { estimateTokens, getMaxInputTokens } from "../lib/tokens";
 import { NYX_SYSTEM_PROMPT, buildSummaryUpdatePrompt } from "../prompts/nyx";
 import { logger } from "../logger";
+import { retrieveRelevantChunks } from "../documents/service";
+
+const isDateTimeQuestion = (content: string): boolean => {
+    const text = content.toLowerCase();
+    return [
+        "current date",
+        "today's date",
+        "todays date",
+        "what date is it",
+        "what day is it",
+        "what time is it",
+        "current time",
+        "date today",
+        "today date",
+    ].some((phrase) => text.includes(phrase));
+};
+
+const getCurrentDateTime = (timeZone?: string): { iso: string; local: string; timeZone: string } => {
+    const now = new Date();
+    const resolvedTimeZone = timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const local = new Intl.DateTimeFormat("en-US", {
+        dateStyle: "full",
+        timeStyle: "long",
+        timeZone: resolvedTimeZone,
+    }).format(now);
+    return {
+        iso: now.toISOString(),
+        local,
+        timeZone: resolvedTimeZone,
+    };
+};
 
 export const createChatsController = (db: ReturnType<typeof drizzle>) => {
     const create = async (_req: Request, res: Response) => {
@@ -121,6 +152,30 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
             await db.update(chats).set({ name }).where(eq(chats.id, chatId));
         }
 
+        if (isDateTimeQuestion(userMessage.content)) {
+            const now = getCurrentDateTime(process.env.APP_TIMEZONE);
+            const assistantContent = `Current date and time: ${now.local} (${now.iso}, ${now.timeZone}).`;
+            const [assistantMessage] = await db
+                .insert(messages)
+                .values({ chatId, role: "assistant", content: assistantContent })
+                .returning();
+            if (!assistantMessage) {
+                res.status(500).json({ error: "Failed to save assistant reply", userMessage });
+                return;
+            }
+
+            const lastN = Math.max(1, Number(process.env.LAST_N_MESSAGES) || 20);
+            const ttlSeconds = Math.max(60, Number(process.env.CACHE_TTL_SECONDS) || 300);
+            const cached = await getLastNTurns(chatId);
+            const chronological = cached !== null && cached.length > 0
+                ? [...cached, userMessage].slice(-lastN)
+                : [userMessage];
+            await setLastNTurns(chatId, [...chronological, assistantMessage].slice(-lastN), ttlSeconds);
+
+            res.status(201).json({ userMessage, assistantMessage });
+            return;
+        }
+
         const lastN = Math.max(1, Number(process.env.LAST_N_MESSAGES) || 20);
         const ttlSeconds = Math.max(60, Number(process.env.CACHE_TTL_SECONDS) || 300);
         let chronological: CachedTurn[];
@@ -141,6 +196,18 @@ export const createChatsController = (db: ReturnType<typeof drizzle>) => {
         const suffix = "Nyx: ";
         const suffixTokens = estimateTokens(suffix);
         let header = `${NYX_SYSTEM_PROMPT}\n\n`;
+        const ragTopK = Math.max(1, Number(process.env.RAG_TOP_K) || 5);
+        try {
+            const relevantChunks = await retrieveRelevantChunks(db, userMessage.content, ragTopK);
+            if (relevantChunks.length > 0) {
+                header += "Relevant knowledge from uploaded documents:\n";
+                for (const chunk of relevantChunks) {
+                    header += `- Source: ${chunk.filename} (chunk ${chunk.chunkIndex})\n${chunk.content}\n\n`;
+                }
+            }
+        } catch (err) {
+            logger.warn({ err, chatId }, "RAG retrieval failed, continuing without document context");
+        }
         const rawSummary = chat.summary?.trim();
         if (rawSummary) {
             const maxSummaryChars = 2000;

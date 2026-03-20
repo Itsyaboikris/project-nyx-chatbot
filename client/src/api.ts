@@ -15,6 +15,11 @@ export type Chat = {
     summary?: string | null;
 };
 
+export type UploadDocumentResponse = {
+    documentId: string;
+    chunksInserted: number;
+};
+
 export const renameChat = async (chatId: string, name: string): Promise<Chat> => {
     const res = await fetch(`${baseUrl}/chats/${chatId}`, {
         method: "PATCH",
@@ -55,22 +60,6 @@ export const getMessages = async (chatId: string): Promise<Message[]> => {
 export type SendMessageResponse = {
     userMessage: Message;
     assistantMessage: Message;
-};
-
-export const sendMessage = async (
-    chatId: string,
-    content: string
-): Promise<SendMessageResponse> => {
-    const res = await fetch(`${baseUrl}/chats/${chatId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
-    });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "Failed to send message");
-    }
-    return res.json();
 };
 
 export type SendMessageStreamCallbacks = {
@@ -149,3 +138,18 @@ export const sendMessageStream = async (
         reader.releaseLock();
     }
 };
+
+export const uploadDocument = async (file: File): Promise<UploadDocumentResponse> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${baseUrl}/documents/upload`, {
+        method: "POST",
+        body: form,
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string; detail?: string };
+        throw new Error(err.detail ?? err.error ?? "Failed to upload document");
+    }
+    return res.json();
+};
+

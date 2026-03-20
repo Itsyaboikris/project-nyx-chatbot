@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { redis } from "./db/redis";
 import { logger } from "./logger";
 import { createChatsRouter } from "./chats/routes";
+import { createDocumentsRouter } from "./documents/routes";
 
 const db = drizzle(process.env.DATABASE_URL!);
 const app = express();
@@ -19,6 +20,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/chats", createChatsRouter(db));
+app.use("/documents", createDocumentsRouter(db));
 
 app.get("/health", async (_req, res) => {
     const status: { postgres?: string; redis?: string } = {};

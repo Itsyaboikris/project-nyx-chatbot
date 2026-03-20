@@ -1,5 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createChat, getChats, getMessages, sendMessageStream, deleteChat, renameChat, type Message, type Chat } from "./api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+    createChat,
+    getChats,
+    getMessages,
+    sendMessageStream,
+    deleteChat,
+    renameChat,
+    uploadDocument,
+    type Message,
+    type Chat,
+} from "./api";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -23,7 +35,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronLeft, ChevronRight, MessageSquare, MoreVertical, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, MessageSquare, MoreVertical, Pencil, Trash2, Upload } from "lucide-react";
 import "./App.css";
 
 function SidebarTriggerChevron() {
@@ -44,6 +56,13 @@ function SidebarTriggerChevron() {
 
 const CHAT_LABEL_MAX = 40;
 
+const stripAssistantPrefix = (content: string): string => {
+    return content
+        .replace(/^\s*\*\*nyx\*\*\s*:?\s*/i, "")
+        .replace(/^\s*nyx\s*:?\s*/i, "")
+        .trimStart();
+};
+
 function formatChatLabel(chat: Chat): string {
     const name = chat.name?.trim();
     if (name) return name.length > CHAT_LABEL_MAX ? name.slice(0, CHAT_LABEL_MAX) + "..." : name;
@@ -62,6 +81,10 @@ function App() {
     const [error, setError] = useState<string | null>(null);
     const [renameModalChatId, setRenameModalChatId] = useState<string | null>(null);
     const [renameModalName, setRenameModalName] = useState("");
+    const [uploadingDoc, setUploadingDoc] = useState(false);
+    const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+    const [showVersionPage, setShowVersionPage] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const chatContainerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -207,6 +230,37 @@ function App() {
         });
     };
 
+    const handleUploadClick = useCallback(() => {
+        fileInputRef.current?.click();
+    }, []);
+
+    const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setError(null);
+        setUploadStatus(null);
+        setUploadingDoc(true);
+        try {
+            const out = await uploadDocument(file);
+            setUploadStatus(`Uploaded "${file.name}" with ${out.chunksInserted} chunks.`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Document upload failed");
+        } finally {
+            setUploadingDoc(false);
+            if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+            }
+        }
+    }, []);
+
+    const openVersionPage = useCallback(() => {
+        setShowVersionPage(true);
+    }, []);
+
+    const closeVersionPage = useCallback(() => {
+        setShowVersionPage(false);
+    }, []);
+
     return (
         <SidebarProvider className="app">
             <Sidebar collapsible="icon" className="border-sidebar-border border-r">
@@ -298,12 +352,65 @@ function App() {
                     </div>
                 </div>
             )}
+            {showVersionPage && (
+                <div className="modal-backdrop" onClick={closeVersionPage} role="presentation">
+                    <div className="modal version-page" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="version-page-title">
+                        <h2 id="version-page-title" className="modal-title">Project Nyx - Version</h2>
+                        <div className="version-grid">
+                            <div className="version-row"><span>Current Version</span><span>v1</span></div>
+                            <div className="version-row"><span>Release Date</span><span>March 20, 2026</span></div>
+                        </div>
+                        <h3 className="version-section-title">Core Functionality in v1</h3>
+                        <ul className="version-list">
+                            <li>Chat creation, listing, renaming, and deletion</li>
+                            <li>Streaming responses from Nyx via Ollama</li>
+                            <li>Short-term memory with recent turns and conversation summaries</li>
+                            <li>Redis caching for recent chat context</li>
+                            <li>Document upload support for PDF, DOCX, TXT, and Markdown-like files</li>
+                            <li>Embedding generation with configured Ollama embedding model</li>
+                            <li>Semantic retrieval from pgvector to ground responses</li>
+                            <li>Markdown rendering for assistant messages in the UI</li>
+                        </ul>
+                        <div className="modal-actions">
+                            <button type="button" onClick={closeVersionPage}>Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
             <SidebarInset>
                 <div className="main">
                     <header className="app-header">
                         <h1>Nyx</h1>
+                        <div className="header-actions">
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                className="hidden-file-input"
+                                onChange={handleFileSelect}
+                                accept=".pdf,.docx,.txt,.md,.csv,.json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json"
+                            />
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={openVersionPage}
+                            >
+                                Version
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={handleUploadClick}
+                                disabled={uploadingDoc}
+                            >
+                                <Upload className="size-4" />
+                                {uploadingDoc ? "Uploading..." : "Upload doc"}
+                            </Button>
+                        </div>
                     </header>
                 {error && <div className="error">{error}</div>}
+                {uploadStatus && <div className="upload-status">{uploadStatus}</div>}
                 <div className="chat-container">
                     <ScrollArea viewportRef={chatContainerRef} className="h-full">
                         {messages.length === 0 ? (
@@ -315,7 +422,15 @@ function App() {
                                         <span className="message-role">
                                             {m.role === "assistant" ? "Nyx" : "You"}
                                         </span>
-                                        <span className="message-content">{m.content}</span>
+                                        <div className="message-content">
+                                            {m.role === "assistant" ? (
+                                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                    {stripAssistantPrefix(m.content)}
+                                                </ReactMarkdown>
+                                            ) : (
+                                                m.content
+                                            )}
+                                        </div>
                                     </li>
                                 ))}
                             </ul>

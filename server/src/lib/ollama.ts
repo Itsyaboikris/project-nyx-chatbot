@@ -1,5 +1,6 @@
 const baseUrl = process.env.OLLAMA_BASE_URL ?? "";
 const model = process.env.OLLAMA_MODEL ?? "llama3.1";
+const embeddingModel = process.env.OLLAMA_EMBEDDING_MODEL ?? "";
 
 export type GenerateOptions = {
     prompt: string;
@@ -9,6 +10,10 @@ export type GenerateOptions = {
 export type GenerateResponse = {
     response: string;
     done: boolean;
+};
+
+type EmbeddingResponse = {
+    embedding: number[];
 };
 
 export const generate = async (options: GenerateOptions): Promise<string> => {
@@ -84,3 +89,30 @@ export async function* generateStream(options: GenerateOptions): AsyncGenerator<
         reader.releaseLock();
     }
 }
+
+export const embedText = async (input: string): Promise<number[]> => {
+    if (!baseUrl) {
+        throw new Error("OLLAMA_BASE_URL is required");
+    }
+    if (!embeddingModel) {
+        throw new Error("OLLAMA_EMBEDDING_MODEL is required");
+    }
+    const url = `${baseUrl.replace(/\/$/, "")}/api/embeddings`;
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            model: embeddingModel,
+            prompt: input,
+        }),
+    });
+    if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Ollama embeddings failed: ${res.status} ${text}`);
+    }
+    const data = (await res.json()) as EmbeddingResponse;
+    if (!Array.isArray(data.embedding) || data.embedding.length === 0) {
+        throw new Error("Ollama embeddings returned empty vector");
+    }
+    return data.embedding;
+};

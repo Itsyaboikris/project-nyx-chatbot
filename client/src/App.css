@@ -59,6 +59,43 @@
     padding: 0.5rem 1rem;
 }
 
+.version-grid {
+    display: grid;
+    gap: 0.45rem;
+    margin-bottom: 1rem;
+}
+
+.version-page {
+    max-width: 680px;
+    width: min(92vw, 680px);
+}
+
+.version-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.95rem;
+}
+
+.version-row span:first-child {
+    opacity: 0.75;
+}
+
+.version-section-title {
+    margin: 0.5rem 0 0.65rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.version-list {
+    margin: 0 0 1rem 1.15rem;
+    padding: 0;
+}
+
+.version-list li {
+    margin: 0.35rem 0;
+}
+
 .main {
     flex: 1;
     min-width: 0;
@@ -81,9 +118,26 @@
     font-size: 1.5rem;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.hidden-file-input {
+    display: none;
+}
+
 .error {
     flex-shrink: 0;
     color: #e74c3c;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.upload-status {
+    flex-shrink: 0;
+    color: #27ae60;
     margin-bottom: 0.5rem;
     font-size: 0.9rem;
 }
@@ -129,6 +183,57 @@
 .message-content {
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+.message-content p {
+    margin: 0 0 0.65rem;
+}
+
+.message-content p:last-child {
+    margin-bottom: 0;
+}
+
+.message-content ul,
+.message-content ol {
+    margin: 0.35rem 0 0.75rem 1.2rem;
+}
+
+.message-content li {
+    margin: 0.2rem 0;
+}
+
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4 {
+    margin: 0.75rem 0 0.45rem;
+    line-height: 1.25;
+    font-weight: 700;
+}
+
+.message-content h1 { font-size: 1.2rem; }
+.message-content h2 { font-size: 1.1rem; }
+.message-content h3 { font-size: 1rem; }
+
+.message-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    padding: 0.08rem 0.3rem;
+}
+
+.message-content pre {
+    margin: 0.65rem 0;
+    padding: 0.65rem 0.75rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.message-content pre code {
+    padding: 0;
+    background: transparent;
 }
 
 .typewriter-cursor {
